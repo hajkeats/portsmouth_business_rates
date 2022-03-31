@@ -66,6 +66,7 @@ def download(url, file_path):
 def create_dataframe_files(input_file):
     """
     Creates a dataframe file for the file provided
+    :param input_file: The csv file to read
     """
     reader = csv.DictReader(open(input_file))
 
@@ -94,57 +95,52 @@ def create_dataframe_files(input_file):
 def main():
     """
     Downloads business rates for Portsmouth. Gets the lat + long for each address, and plots it on a map of Portsmouth
-    with a colour scale based on rate value
+    with a colour scale based on rate value. Shows empty properties using a star.
     """
-    ndr_file = Path(BUSINESS_RATES_CSV)
-    ndr_data_file = Path(f'{BUSINESS_RATES_CSV}.data')
-    empt_file = Path(EMPTY_PROPERTIES_CSV)
-    empt_data_file = Path(f'{EMPTY_PROPERTIES_CSV}.data')
-    map_file = Path(MAP_PNG)
 
-    if not ndr_file.is_file():
+    if not Path(BUSINESS_RATES_CSV).is_file():
         download(f'{PORTSMOUTH_DATA_URL}/{BUSINESS_RATES_CSV}', BUSINESS_RATES_CSV)
 
-    if not empt_file.is_file():
+    if not Path(EMPTY_PROPERTIES_CSV).is_file():
         download(f'{PORTSMOUTH_DATA_URL}/{EMPTY_PROPERTIES_CSV}', EMPTY_PROPERTIES_CSV)
 
-    if not ndr_data_file.is_file():
+    if not Path(f'{BUSINESS_RATES_CSV}.data').is_file():
         create_dataframe_files(BUSINESS_RATES_CSV)
 
-    if not empt_data_file.is_file():
+    if not Path(f'{EMPTY_PROPERTIES_CSV}.data').is_file():
         create_dataframe_files(EMPTY_PROPERTIES_CSV)
 
     with open(f'{BUSINESS_RATES_CSV}.data', 'r') as f:
         records = json.load(f)
-        ndr_df = DataFrame(records)
+        br_df = DataFrame(records)
 
     with open(f'{EMPTY_PROPERTIES_CSV}.data', 'r') as f:
         records = json.load(f)
-        empt_df = DataFrame(records)
+        ep_df = DataFrame(records)
 
-    ndr_df = ndr_df.dropna()
-    ndr_df.drop(index=ndr_df.rate.nlargest(n=HIGHEST_CUT_OFF).index, inplace=True)
-    ndr_df.drop(index=ndr_df.rate.nsmallest(n=LOWEST_CUT_OFF).index, inplace=True)
-    bbox = (ndr_df.longitude.min(), ndr_df.longitude.max(), ndr_df.latitude.min(), ndr_df.latitude.max())
+    br_df = br_df.dropna()
+    br_df.drop(index=br_df.rate.nlargest(n=HIGHEST_CUT_OFF).index, inplace=True)
+    br_df.drop(index=br_df.rate.nsmallest(n=LOWEST_CUT_OFF).index, inplace=True)
+    bbox = (br_df.longitude.min(), br_df.longitude.max(), br_df.latitude.min(), br_df.latitude.max())
 
-    if not map_file.is_file():
+    if not Path(MAP_PNG).is_file():
         print(f'Getting map file for bbox {bbox}')
         bbox_format = f"{format(bbox[0], '.15f')},{format(bbox[2], '.15f')},{format(bbox[1], '.15f')}," \
                       f"{format(bbox[3], '.15f')}"
         map_url = f'{MAP_EXPORT_URL}?bbox={bbox_format}&scale=25000&format=png'
         input(f"Please open openstreetmap, and export {MAP_PNG} here using url {map_url}")
 
-    map = plt.imread(MAP_PNG)
+    map_img = plt.imread(MAP_PNG)
     fig, ax = plt.subplots()
     cm = plt.cm.get_cmap(COLOURMAP)
-    sc = ax.scatter(ndr_df.longitude, ndr_df.latitude, c=ndr_df.rate, vmin=ndr_df.rate.min(), vmax=ndr_df.rate.max(),
+    sc = ax.scatter(br_df.longitude, br_df.latitude, c=br_df.rate, vmin=br_df.rate.min(), vmax=br_df.rate.max(),
                     s=50, cmap=cm, alpha=0.8)
-    ax.scatter(empt_df.longitude, empt_df.latitude, c='w', s=20, marker='*')
+    ax.scatter(ep_df.longitude, ep_df.latitude, c='w', s=20, marker='*')
     ax.set_title(f'Current Rateable Values in Portsmouth - Highest {HIGHEST_CUT_OFF} values removed, '
                  f'Lowest  {LOWEST_CUT_OFF} values removed')
-    ax.set_xlim(ndr_df.longitude.min(), ndr_df.longitude.max())
-    ax.set_ylim(ndr_df.latitude.min(), ndr_df.latitude.max())
-    ax.imshow(map, extent=bbox, aspect='equal')
+    ax.set_xlim(br_df.longitude.min(), br_df.longitude.max())
+    ax.set_ylim(br_df.latitude.min(), br_df.latitude.max())
+    ax.imshow(map_img, extent=bbox, aspect='equal')
     plt.colorbar(sc)
     plt.show()
 
