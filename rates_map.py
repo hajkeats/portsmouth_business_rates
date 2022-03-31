@@ -15,11 +15,10 @@ MAP_EXPORT_URL = "https://render.openstreetmap.org/cgi-bin/export"
 
 EMPTY_PROPERTIES_CSV = "empty-commercial-properties-january-2022.csv"
 BUSINESS_RATES_CSV = "ndr-properties-january-2022.csv"
-DATA_FILE = "data.file"
 MAP_PNG = "map.png"
 
-LOWEST_CUT_OFF = 300
-HIGHEST_CUT_OFF = 300
+LOWEST_CUT_OFF = 200
+HIGHEST_CUT_OFF = 200
 COLOURMAP = "inferno"
 
 
@@ -64,14 +63,43 @@ def download(url, file_path):
     open(file_path, 'wb').write(resp.content)
 
 
+def create_dataframe_files(input_file):
+    """
+    Creates a dataframe file for the file provided
+    """
+    reader = csv.DictReader(open(input_file))
+
+    records = []
+    i = 0
+    for _ in reader:
+        record = next(reader)
+        i += 1
+        if i % 50 == 0:
+            print(f'{i} processed')
+
+        postcode = get_postcode(record['Full Property Address'])
+        if postcode:
+            postcode_data = get_postcode_data(postcode)
+            if not postcode_data:
+                continue
+            record['latitude'] = round(postcode_data['latitude'], 6)
+            record['longitude'] = round(postcode_data['longitude'], 6)
+            record['rate'] = int(record['Current Rateable Value'])
+            records.append(record)
+
+    with open(f'{input_file}.data', 'w') as f:
+        json.dump(records, f)
+
+
 def main():
     """
     Downloads business rates for Portsmouth. Gets the lat + long for each address, and plots it on a map of Portsmouth
     with a colour scale based on rate value
     """
-    data_file = Path(DATA_FILE)
     ndr_file = Path(BUSINESS_RATES_CSV)
+    ndr_data_file = Path(f'{BUSINESS_RATES_CSV}.data')
     empt_file = Path(EMPTY_PROPERTIES_CSV)
+    empt_data_file = Path(f'{EMPTY_PROPERTIES_CSV}.data')
     map_file = Path(MAP_PNG)
 
     if not ndr_file.is_file():
@@ -80,38 +108,27 @@ def main():
     if not empt_file.is_file():
         download(f'{PORTSMOUTH_DATA_URL}/{EMPTY_PROPERTIES_CSV}', EMPTY_PROPERTIES_CSV)
 
-    if not data_file.is_file():
-        reader = csv.DictReader(open(BUSINESS_RATES_CSV))
+    if not ndr_data_file.is_file():
+        create_dataframe_files(BUSINESS_RATES_CSV)
 
-        records = []
-        i = 0
-        for _ in reader:
-            record = next(reader)
-            i += 1
-            if i % 50 == 0:
-                print(f'{i} processed')
+    if not empt_data_file.is_file():
+        create_dataframe_files(EMPTY_PROPERTIES_CSV)
 
-            postcode = get_postcode(record['Full Property Address'])
-            if postcode:
-                postcode_data = get_postcode_data(postcode)
-                if not postcode_data:
-                    continue
-                record['latitude'] = round(postcode_data['latitude'], 6)
-                record['longitude'] = round(postcode_data['longitude'], 6)
-                record['rate'] = int(record['Current Rateable Value'])
-                records.append(record)
-
-        with open(DATA_FILE, 'w') as f:
-            json.dump(records, f)
-
-    with open(DATA_FILE, 'r') as f:
+    with open(f'{BUSINESS_RATES_CSV}.data', 'r') as f:
         records = json.load(f)
-        df = DataFrame(records)
+        ndr_df = DataFrame(records)
 
-    df = df.dropna()
-    df.drop(index=df.rate.nlargest(n=HIGHEST_CUT_OFF).index, inplace=True)
-    df.drop(index=df.rate.nsmallest(n=LOWEST_CUT_OFF).index, inplace=True)
-    bbox = (df.longitude.min(), df.longitude.max(), df.latitude.min(), df.latitude.max())
+    with open(f'{EMPTY_PROPERTIES_CSV}.data', 'r') as f:
+        records = json.load(f)
+        empt_df = DataFrame(records)
+
+    for ref in empt_df['\ufeffProperty Reference Number']:
+        ndr_df = ndr_df[ndr_df['\ufeffProperty Reference Number'] != ref]
+
+    ndr_df = ndr_df.dropna()
+    ndr_df.drop(index=ndr_df.rate.nlargest(n=HIGHEST_CUT_OFF).index, inplace=True)
+    ndr_df.drop(index=ndr_df.rate.nsmallest(n=LOWEST_CUT_OFF).index, inplace=True)
+    bbox = (ndr_df.longitude.min(), ndr_df.longitude.max(), ndr_df.latitude.min(), ndr_df.latitude.max())
 
     if not map_file.is_file():
         print(f'Getting map file for bbox {bbox}')
@@ -123,12 +140,14 @@ def main():
     map = plt.imread(MAP_PNG)
     fig, ax = plt.subplots()
     cm = plt.cm.get_cmap(COLOURMAP)
-    sc = ax.scatter(df.longitude, df.latitude, c=df.rate, vmin=df.rate.min(), vmax=df.rate.max(), s=50, cmap=cm,
-                    alpha=0.8)
+    sc = ax.scatter(ndr_df.longitude, ndr_df.latitude, c=ndr_df.rate, vmin=ndr_df.rate.min(), vmax=ndr_df.rate.max(),
+                    s=50, cmap=cm, alpha=0.8)
+    ax.scatter(empt_df.longitude, empt_df.latitude, c=empt_df.rate, vmin=ndr_df.rate.min(), vmax=ndr_df.rate.max(),
+               s=50, cmap=cm, alpha=0.8, marker='^')
     ax.set_title(f'Current Rateable Values in Portsmouth - Highest {HIGHEST_CUT_OFF} values removed, '
                  f'Lowest  {LOWEST_CUT_OFF} values removed')
-    ax.set_xlim(df.longitude.min(), df.longitude.max())
-    ax.set_ylim(df.latitude.min(), df.latitude.max())
+    ax.set_xlim(ndr_df.longitude.min(), ndr_df.longitude.max())
+    ax.set_ylim(ndr_df.latitude.min(), ndr_df.latitude.max())
     ax.imshow(map, extent=bbox, aspect='equal')
     plt.colorbar(sc)
     plt.show()
