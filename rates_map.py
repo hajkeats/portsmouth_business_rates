@@ -17,8 +17,8 @@ EMPTY_PROPERTIES_CSV = "empty-commercial-properties-january-2022.csv"
 BUSINESS_RATES_CSV = "ndr-properties-january-2022.csv"
 MAP_PNG = "map.png"
 
-LOWEST_CUT_OFF = 200
-HIGHEST_CUT_OFF = 200
+LOWEST_CUT_OFF = 0
+HIGHEST_CUT_OFF = 100
 COLOURMAP = "inferno"
 
 
@@ -142,8 +142,7 @@ def main():
     cm = plt.cm.get_cmap(COLOURMAP)
     sc = ax.scatter(ndr_df.longitude, ndr_df.latitude, c=ndr_df.rate, vmin=ndr_df.rate.min(), vmax=ndr_df.rate.max(),
                     s=50, cmap=cm, alpha=0.8)
-    ax.scatter(empt_df.longitude, empt_df.latitude, c=empt_df.rate, vmin=ndr_df.rate.min(), vmax=ndr_df.rate.max(),
-               s=50, cmap=cm, alpha=0.8, marker='^')
+    ax.scatter(empt_df.longitude, empt_df.latitude, c='w', s=20, marker='*')
     ax.set_title(f'Current Rateable Values in Portsmouth - Highest {HIGHEST_CUT_OFF} values removed, '
                  f'Lowest  {LOWEST_CUT_OFF} values removed')
     ax.set_xlim(ndr_df.longitude.min(), ndr_df.longitude.max())
