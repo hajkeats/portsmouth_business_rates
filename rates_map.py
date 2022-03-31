@@ -17,8 +17,8 @@ EMPTY_PROPERTIES_CSV = "empty-commercial-properties-january-2022.csv"
 BUSINESS_RATES_CSV = "ndr-properties-january-2022.csv"
 MAP_PNG = "map.png"
 
-LOWEST_CUT_OFF = 0
-HIGHEST_CUT_OFF = 100
+LOWEST_CUT_OFF = 200
+HIGHEST_CUT_OFF = 200
 COLOURMAP = "inferno"
 
 
@@ -121,9 +121,6 @@ def main():
     with open(f'{EMPTY_PROPERTIES_CSV}.data', 'r') as f:
         records = json.load(f)
         empt_df = DataFrame(records)
-
-    for ref in empt_df['\ufeffProperty Reference Number']:
-        ndr_df = ndr_df[ndr_df['\ufeffProperty Reference Number'] != ref]
 
     ndr_df = ndr_df.dropna()
     ndr_df.drop(index=ndr_df.rate.nlargest(n=HIGHEST_CUT_OFF).index, inplace=True)
