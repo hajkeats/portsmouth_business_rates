@@ -17,9 +17,10 @@ EMPTY_PROPERTIES_CSV = "empty-commercial-properties-january-2022.csv"
 BUSINESS_RATES_CSV = "ndr-properties-january-2022.csv"
 MAP_PNG = "map.png"
 
-LOWEST_CUT_OFF = 200
-HIGHEST_CUT_OFF = 200
-COLOURMAP = "inferno"
+LOWEST_CUT_OFF = 0
+HIGHEST_CUT_OFF = 300
+COLOURMAP = "RdBu"
+POSTER_MODE = True
 
 
 def get_postcode(address):
@@ -131,18 +132,30 @@ def main():
         input(f"Please open openstreetmap, and export {MAP_PNG} here using url {map_url}")
 
     map_img = plt.imread(MAP_PNG)
-    fig, ax = plt.subplots()
+    if POSTER_MODE:
+        fig, ax = plt.subplots(dpi=900, figsize=(7, 7))
+    else:
+        fig, ax = plt.subplots()
     cm = plt.cm.get_cmap(COLOURMAP)
-    sc = ax.scatter(br_df.longitude, br_df.latitude, c=br_df.rate, vmin=br_df.rate.min(), vmax=br_df.rate.max(),
-                    s=50, cmap=cm, alpha=0.8)
-    ax.scatter(ep_df.longitude, ep_df.latitude, c='w', s=20, marker='*')
-    ax.set_title(f'Current Rateable Values in Portsmouth - Highest {HIGHEST_CUT_OFF} values removed, '
-                 f'Lowest  {LOWEST_CUT_OFF} values removed')
+
+    if POSTER_MODE:
+        sc = ax.scatter(br_df.longitude, br_df.latitude, c=br_df.rate, vmin=br_df.rate.min(), vmax=br_df.rate.max(),
+                        s=2, cmap=cm, alpha=0.8)
+        ax.scatter(ep_df.longitude, ep_df.latitude, c='w', s=0.1, marker='*')
+    else:
+        sc = ax.scatter(br_df.longitude, br_df.latitude, c=br_df.rate, vmin=br_df.rate.min(), vmax=br_df.rate.max(),
+                        s=50, cmap=cm, alpha=0.8)
+        ax.scatter(ep_df.longitude, ep_df.latitude, c='w', s=20, marker='*')
+
+    ax.set_title(f'Current Rateable Values in Portsmouth - January 2022 \nHighest {HIGHEST_CUT_OFF} values removed')
     ax.set_xlim(br_df.longitude.min(), br_df.longitude.max())
     ax.set_ylim(br_df.latitude.min(), br_df.latitude.max())
-    ax.imshow(map_img, extent=bbox, aspect='equal')
+    ax.imshow(map_img, extent=bbox, aspect='auto')
     plt.colorbar(sc)
-    plt.show()
+    if POSTER_MODE:
+        plt.savefig("poster.png")
+    else:
+        plt.show()
 
 
 if __name__ == '__main__':
