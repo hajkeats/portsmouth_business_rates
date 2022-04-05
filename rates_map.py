@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
+import argparse
 import csv
+import random
 import re
 import json
 from pathlib import Path
@@ -21,7 +23,6 @@ MAP_PNG = "map.png"
 LOWEST_CUT_OFF = 0
 HIGHEST_CUT_OFF = 100
 COLOURMAP = "RdBu"
-POSTER_MODE = False
 
 
 def get_postcode(address):
@@ -73,6 +74,10 @@ def create_dataframe_files(input_file):
     reader = csv.DictReader(open(input_file))
 
     records = []
+    postcodes = []
+    duplicate_postcodes = []
+    failed_lookups = []
+    failed_postcode_finds = []
     i = 0
     for _ in reader:
         record = next(reader)
@@ -82,16 +87,103 @@ def create_dataframe_files(input_file):
 
         postcode = get_postcode(record['Full Property Address'])
         if postcode:
+            if postcode not in postcodes:
+                postcodes.append(postcode)
+            elif postcode not in duplicate_postcodes:
+                duplicate_postcodes.append(postcode)
+
             postcode_data = get_postcode_data(postcode)
             if not postcode_data:
+                failed_lookups.append(record)
                 continue
+            record['postcode'] = postcode
             record['latitude'] = round(postcode_data['latitude'], 6)
             record['longitude'] = round(postcode_data['longitude'], 6)
             record['rate'] = int(record['Current Rateable Value'])
             records.append(record)
+        else:
+            failed_postcode_finds.append(record)
+            continue
+
+    print(f'{len(duplicate_postcodes)} duplicate postcodes found, {len(postcodes)} total')
+
+    for record in records:
+        if record['postcode'] in duplicate_postcodes:
+            record['latitude'] = round(record['latitude'] + random.uniform(0.0001, 0.0009), 6)
+            record['longitude'] = round(record['longitude'] + random.uniform(0.0001, 0.0009), 6)
 
     with open(f'{input_file}.data', 'w') as f:
         json.dump(records, f)
+
+    keys = failed_lookups[0].keys()
+    with open(f'{input_file}-failed-lookup.data', 'w', newline='') as f:
+        dict_writer = csv.DictWriter(f, keys)
+        dict_writer.writeheader()
+        dict_writer.writerows(failed_lookups)
+
+    keys = failed_postcode_finds[0].keys()
+    with open(f'{input_file}-failed-postcode-finds.data', 'w', newline='') as f:
+        dict_writer = csv.DictWriter(f, keys)
+        dict_writer.writeheader()
+        dict_writer.writerows(failed_postcode_finds)
+
+
+def create_interactive_map(br_df, ep_df, bbox):
+    """
+    Creates an interactive map on port 8888
+    :param br_df: business rates data frame
+    :param ep_df: empty properties data frame
+    :param bbox: bounding box values
+    """
+    map_img = plt.imread(MAP_PNG)
+    fig, ax = plt.subplots(dpi=240, figsize=(3, 3))
+    cm = plt.cm.get_cmap(COLOURMAP)
+    ax.set_title(f'Current Rateable Values in Portsmouth - January 2022 \nHighest {HIGHEST_CUT_OFF} values removed')
+    ax.set_xlim(br_df.longitude.min(), br_df.longitude.max())
+    ax.set_ylim(br_df.latitude.min(), br_df.latitude.max())
+    ax.imshow(map_img, extent=bbox, aspect='auto')
+    sc = ax.scatter(br_df.longitude, br_df.latitude, c=br_df.rate, vmin=br_df.rate.min(), vmax=br_df.rate.max(), s=0.5,
+                    cmap=cm, alpha=0.8)
+    ep_sc = ax.scatter(ep_df.longitude, ep_df.latitude, c='y', s=0.2, marker='*')
+    plt.colorbar(sc)
+    names_and_rates = [f"{n}: {r}" for n, r in zip(br_df['Primary Liable party name'], br_df.rate)]
+    tooltip = mpld3.plugins.PointLabelTooltip(sc, labels=names_and_rates)
+    empty_list = [f"{n} (EMPTY)" for n in ep_df['Primary Liable party name']]
+    empty_tooltip = mpld3.plugins.PointLabelTooltip(ep_sc, labels=empty_list)
+    mpld3.plugins.connect(fig, tooltip)
+    mpld3.plugins.connect(fig, empty_tooltip)
+    mpld3.show()
+
+
+def create_poster(br_df, ep_df, bbox):
+    """
+    Creates a high res image of the map
+    :param br_df: business rates data frame
+    :param ep_df: empty properties data frame
+    :param bbox: bounding box values
+    """
+    map_img = plt.imread(MAP_PNG)
+    fig, ax = plt.subplots(dpi=900, figsize=(7, 7))
+    cm = plt.cm.get_cmap(COLOURMAP)
+    ax.set_title(f'Current Rateable Values in Portsmouth - January 2022 \nHighest {HIGHEST_CUT_OFF} values removed')
+    ax.set_xlim(br_df.longitude.min(), br_df.longitude.max())
+    ax.set_ylim(br_df.latitude.min(), br_df.latitude.max())
+    ax.imshow(map_img, extent=bbox, aspect='auto')
+    sc = ax.scatter(br_df.longitude, br_df.latitude, c=br_df.rate, vmin=br_df.rate.min(), vmax=br_df.rate.max(), s=2,
+                    cmap=cm, alpha=0.8)
+    ax.scatter(ep_df.longitude, ep_df.latitude, c='w', s=0.1, marker='*')
+    plt.colorbar(sc)
+    plt.savefig("poster.png")
+
+
+def parse_args():
+    """
+    Parses arguments
+    """
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--poster', action='store_true', help='Create a PNG')
+    parser.add_argument('--interactive', action='store_true', help='Create an interactive map')
+    return parser.parse_args()
 
 
 def main():
@@ -99,6 +191,7 @@ def main():
     Downloads business rates for Portsmouth. Gets the lat + long for each address, and plots it on a map of Portsmouth
     with a colour scale based on rate value. Shows empty properties using a star.
     """
+    args = parse_args()
 
     if not Path(BUSINESS_RATES_CSV).is_file():
         download(f'{PORTSMOUTH_DATA_URL}/{BUSINESS_RATES_CSV}', BUSINESS_RATES_CSV)
@@ -132,35 +225,10 @@ def main():
         map_url = f'{MAP_EXPORT_URL}?bbox={bbox_format}&scale=25000&format=png'
         input(f"Please open openstreetmap, and export {MAP_PNG} here using url {map_url}")
 
-    map_img = plt.imread(MAP_PNG)
-    if POSTER_MODE:
-        fig, ax = plt.subplots(dpi=900, figsize=(7, 7))
-    else:
-        fig, ax = plt.subplots(dpi=240, figsize=(3, 3))
-    cm = plt.cm.get_cmap(COLOURMAP)
-
-    ax.set_title(f'Current Rateable Values in Portsmouth - January 2022 \nHighest {HIGHEST_CUT_OFF} values removed')
-    ax.set_xlim(br_df.longitude.min(), br_df.longitude.max())
-    ax.set_ylim(br_df.latitude.min(), br_df.latitude.max())
-    ax.imshow(map_img, extent=bbox, aspect='auto')
-
-    if POSTER_MODE:
-        sc = ax.scatter(br_df.longitude, br_df.latitude, c=br_df.rate, vmin=br_df.rate.min(), vmax=br_df.rate.max(),
-                        s=2, cmap=cm, alpha=0.8)
-        ax.scatter(ep_df.longitude, ep_df.latitude, c='w', s=0.1, marker='*')
-        plt.colorbar(sc)
-        plt.savefig("poster.png")
-    else:
-        sc = ax.scatter(br_df.longitude, br_df.latitude, c=br_df.rate, vmin=br_df.rate.min(), vmax=br_df.rate.max(),
-                        s=0.5, cmap=cm, alpha=0.8)
-        empt_sc = ax.scatter(ep_df.longitude, ep_df.latitude, c='y', s=0.2, marker='*')
-        plt.colorbar(sc)
-        tooltip = mpld3.plugins.PointLabelTooltip(sc, labels=list(br_df['Primary Liable party name']))
-        empty_list = [f"{n} (EMPTY)" for n in ep_df['Primary Liable party name']]
-        empty_tooltip = mpld3.plugins.PointLabelTooltip(empt_sc, labels=empty_list)
-        mpld3.plugins.connect(fig, tooltip)
-        mpld3.plugins.connect(fig, empty_tooltip)
-        mpld3.show()
+    if args.poster:
+        create_poster(br_df, ep_df, bbox)
+    if args.interactive:
+        create_interactive_map(br_df, ep_df, bbox)
 
 
 if __name__ == '__main__':
