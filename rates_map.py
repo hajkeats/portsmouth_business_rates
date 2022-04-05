@@ -8,6 +8,7 @@ import requests
 import matplotlib.pyplot as plt
 from pandas import DataFrame
 from time import sleep
+import mpld3
 
 PORTSMOUTH_DATA_URL = "https://data.portsmouth.gov.uk/media/tables"
 POSTCODE_API_URL = "https://api.postcodes.io/postcodes"
@@ -18,9 +19,9 @@ BUSINESS_RATES_CSV = "ndr-properties-january-2022.csv"
 MAP_PNG = "map.png"
 
 LOWEST_CUT_OFF = 0
-HIGHEST_CUT_OFF = 300
+HIGHEST_CUT_OFF = 100
 COLOURMAP = "RdBu"
-POSTER_MODE = True
+POSTER_MODE = False
 
 
 def get_postcode(address):
@@ -135,27 +136,31 @@ def main():
     if POSTER_MODE:
         fig, ax = plt.subplots(dpi=900, figsize=(7, 7))
     else:
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(dpi=240, figsize=(3, 3))
     cm = plt.cm.get_cmap(COLOURMAP)
-
-    if POSTER_MODE:
-        sc = ax.scatter(br_df.longitude, br_df.latitude, c=br_df.rate, vmin=br_df.rate.min(), vmax=br_df.rate.max(),
-                        s=2, cmap=cm, alpha=0.8)
-        ax.scatter(ep_df.longitude, ep_df.latitude, c='w', s=0.1, marker='*')
-    else:
-        sc = ax.scatter(br_df.longitude, br_df.latitude, c=br_df.rate, vmin=br_df.rate.min(), vmax=br_df.rate.max(),
-                        s=50, cmap=cm, alpha=0.8)
-        ax.scatter(ep_df.longitude, ep_df.latitude, c='w', s=20, marker='*')
 
     ax.set_title(f'Current Rateable Values in Portsmouth - January 2022 \nHighest {HIGHEST_CUT_OFF} values removed')
     ax.set_xlim(br_df.longitude.min(), br_df.longitude.max())
     ax.set_ylim(br_df.latitude.min(), br_df.latitude.max())
     ax.imshow(map_img, extent=bbox, aspect='auto')
-    plt.colorbar(sc)
+
     if POSTER_MODE:
+        sc = ax.scatter(br_df.longitude, br_df.latitude, c=br_df.rate, vmin=br_df.rate.min(), vmax=br_df.rate.max(),
+                        s=2, cmap=cm, alpha=0.8)
+        ax.scatter(ep_df.longitude, ep_df.latitude, c='w', s=0.1, marker='*')
+        plt.colorbar(sc)
         plt.savefig("poster.png")
     else:
-        plt.show()
+        sc = ax.scatter(br_df.longitude, br_df.latitude, c=br_df.rate, vmin=br_df.rate.min(), vmax=br_df.rate.max(),
+                        s=0.5, cmap=cm, alpha=0.8)
+        empt_sc = ax.scatter(ep_df.longitude, ep_df.latitude, c='y', s=0.2, marker='*')
+        plt.colorbar(sc)
+        tooltip = mpld3.plugins.PointLabelTooltip(sc, labels=list(br_df['Primary Liable party name']))
+        empty_list = [f"{n} (EMPTY)" for n in ep_df['Primary Liable party name']]
+        empty_tooltip = mpld3.plugins.PointLabelTooltip(empt_sc, labels=empty_list)
+        mpld3.plugins.connect(fig, tooltip)
+        mpld3.plugins.connect(fig, empty_tooltip)
+        mpld3.show()
 
 
 if __name__ == '__main__':
