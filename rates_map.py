@@ -21,7 +21,7 @@ BUSINESS_RATES_CSV = "ndr-properties-january-2022.csv"
 MAP_PNG = "map.png"
 
 LOWEST_CUT_OFF = 0
-HIGHEST_CUT_OFF = 100
+HIGHEST_CUT_OFF = 150
 COLOURMAP = "RdBu"
 
 
@@ -171,7 +171,7 @@ def create_poster(br_df, ep_df, bbox):
     ax.imshow(map_img, extent=bbox, aspect='auto')
     sc = ax.scatter(br_df.longitude, br_df.latitude, c=br_df.rate, vmin=br_df.rate.min(), vmax=br_df.rate.max(), s=2,
                     cmap=cm, alpha=0.8)
-    ax.scatter(ep_df.longitude, ep_df.latitude, c='w', s=0.1, marker='*')
+    ax.scatter(ep_df.longitude, ep_df.latitude, c='y', s=0.2, marker='*')
     plt.colorbar(sc)
     plt.savefig("poster.png")
 
