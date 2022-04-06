@@ -20,8 +20,6 @@ EMPTY_PROPERTIES_CSV = "empty-commercial-properties-january-2022.csv"
 BUSINESS_RATES_CSV = "ndr-properties-january-2022.csv"
 MAP_PNG = "map.png"
 
-LOWEST_CUT_OFF = 0
-HIGHEST_CUT_OFF = 150
 COLOURMAP = "RdBu"
 
 
@@ -66,7 +64,7 @@ def download(url, file_path):
     open(file_path, 'wb').write(resp.content)
 
 
-def create_dataframe_files(input_file):
+def create_dataframe_files(input_file, compare_file=None):
     """
     Creates a dataframe file for the file provided
     :param input_file: The csv file to read
@@ -107,10 +105,31 @@ def create_dataframe_files(input_file):
 
     print(f'{len(duplicate_postcodes)} duplicate postcodes found, {len(postcodes)} total')
 
-    for record in records:
-        if record['postcode'] in duplicate_postcodes:
-            record['latitude'] = round(record['latitude'] + random.uniform(0.0001, 0.0009), 6)
-            record['longitude'] = round(record['longitude'] + random.uniform(0.0001, 0.0009), 6)
+    if compare_file:  # Used to make sure the location for each property is consistent across the dataframes
+        with open(compare_file, 'r') as f:
+            compare_records = json.load(f)
+        for record in records:
+            property_reference = record['\ufeffProperty Reference Number']
+            for compare_record in compare_records:
+                if compare_record['\ufeffProperty Reference Number'] == property_reference:
+                    record['longitude'] = compare_record['longitude']
+                    record['latitude'] = compare_record['latitude']
+                    break
+    else:  # Used to randomly differentiate locations between properties with the same postcode
+        operator_functions = {
+            '+': lambda a, b: a + b,
+            '-': lambda a, b: a - b,
+        }
+        operators = list(operator_functions.keys())
+        for record in records:
+            if record['postcode'] in duplicate_postcodes:
+                operator = random.choice(operators)
+                record['latitude'] = round(operator_functions[operator](
+                    record['latitude'], random.uniform(0.0001, 0.0005)
+                ), 6)
+                record['longitude'] = round(operator_functions[operator](
+                    record['longitude'], random.uniform(0.0001, 0.0005)
+                ), 6)
 
     with open(f'{input_file}.data', 'w') as f:
         json.dump(records, f)
@@ -128,17 +147,22 @@ def create_dataframe_files(input_file):
         dict_writer.writerows(failed_postcode_finds)
 
 
-def create_interactive_map(br_df, ep_df, bbox):
+def create_interactive_map(br_df, ep_df, bbox, highres, cutoff):
     """
     Creates an interactive map on port 8888
     :param br_df: business rates data frame
     :param ep_df: empty properties data frame
     :param bbox: bounding box values
+    :param highres: whether to create it in highres
+    :param cutoff: the highest n values removed from dataset
     """
     map_img = plt.imread(MAP_PNG)
-    fig, ax = plt.subplots(dpi=240, figsize=(3, 3))
+    if not highres:
+        fig, ax = plt.subplots(dpi=240, figsize=(3, 3))
+    if highres:
+        fig, ax = plt.subplots(dpi=600, figsize=(3, 3))
     cm = plt.cm.get_cmap(COLOURMAP)
-    ax.set_title(f'Current Rateable Values in Portsmouth - January 2022 \nHighest {HIGHEST_CUT_OFF} values removed')
+    ax.set_title(f'Current Rateable Values in Portsmouth - January 2022 \nHighest {cutoff} values removed')
     ax.set_xlim(br_df.longitude.min(), br_df.longitude.max())
     ax.set_ylim(br_df.latitude.min(), br_df.latitude.max())
     ax.imshow(map_img, extent=bbox, aspect='auto')
@@ -155,17 +179,18 @@ def create_interactive_map(br_df, ep_df, bbox):
     mpld3.show()
 
 
-def create_poster(br_df, ep_df, bbox):
+def create_poster(br_df, ep_df, bbox, cutoff):
     """
     Creates a high res image of the map
     :param br_df: business rates data frame
     :param ep_df: empty properties data frame
     :param bbox: bounding box values
+    :param cutoff: the highest n values removed from dataset
     """
     map_img = plt.imread(MAP_PNG)
     fig, ax = plt.subplots(dpi=900, figsize=(7, 7))
     cm = plt.cm.get_cmap(COLOURMAP)
-    ax.set_title(f'Current Rateable Values in Portsmouth - January 2022 \nHighest {HIGHEST_CUT_OFF} values removed')
+    ax.set_title(f'Current Rateable Values in Portsmouth - January 2022 \nHighest {cutoff} values removed')
     ax.set_xlim(br_df.longitude.min(), br_df.longitude.max())
     ax.set_ylim(br_df.latitude.min(), br_df.latitude.max())
     ax.imshow(map_img, extent=bbox, aspect='auto')
@@ -183,6 +208,8 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--poster', action='store_true', help='Create a PNG')
     parser.add_argument('--interactive', action='store_true', help='Create an interactive map')
+    parser.add_argument('--highres', action='store_true', help='Create a high res interactive map')
+    parser.add_argument('--cutoff', type=int, help='The top n values to remove', default=150)
     return parser.parse_args()
 
 
@@ -203,7 +230,7 @@ def main():
         create_dataframe_files(BUSINESS_RATES_CSV)
 
     if not Path(f'{EMPTY_PROPERTIES_CSV}.data').is_file():
-        create_dataframe_files(EMPTY_PROPERTIES_CSV)
+        create_dataframe_files(EMPTY_PROPERTIES_CSV, compare_file=f'{BUSINESS_RATES_CSV}.data')
 
     with open(f'{BUSINESS_RATES_CSV}.data', 'r') as f:
         records = json.load(f)
@@ -214,8 +241,7 @@ def main():
         ep_df = DataFrame(records)
 
     br_df = br_df.dropna()
-    br_df.drop(index=br_df.rate.nlargest(n=HIGHEST_CUT_OFF).index, inplace=True)
-    br_df.drop(index=br_df.rate.nsmallest(n=LOWEST_CUT_OFF).index, inplace=True)
+    br_df.drop(index=br_df.rate.nlargest(n=args.cutoff).index, inplace=True)
     bbox = (br_df.longitude.min(), br_df.longitude.max(), br_df.latitude.min(), br_df.latitude.max())
 
     if not Path(MAP_PNG).is_file():
@@ -226,9 +252,9 @@ def main():
         input(f"Please open openstreetmap, and export {MAP_PNG} here using url {map_url}")
 
     if args.poster:
-        create_poster(br_df, ep_df, bbox)
+        create_poster(br_df, ep_df, bbox, args.cutoff)
     if args.interactive:
-        create_interactive_map(br_df, ep_df, bbox)
+        create_interactive_map(br_df, ep_df, bbox, args.highres, args.cutoff)
 
 
 if __name__ == '__main__':
