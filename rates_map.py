@@ -18,6 +18,7 @@ MAP_EXPORT_URL = "https://render.openstreetmap.org/cgi-bin/export"
 
 EMPTY_PROPERTIES_CSV = "empty-commercial-properties-january-2022.csv"
 BUSINESS_RATES_CSV = "ndr-properties-january-2022.csv"
+FOODBANK_DELIVERIES_CSV = "foodbank-deliveries.csv"
 MAP_PNG = "map.png"
 
 COLOURMAP = "RdBu"
@@ -62,6 +63,23 @@ def download(url, file_path):
     """
     resp = requests.get(url, allow_redirects=True)
     open(file_path, 'wb').write(resp.content)
+
+
+def get_food_bank_points():
+    """
+    Gets the lat + long for food bank deliveries
+    """
+    reader = csv.DictReader(open(FOODBANK_DELIVERIES_CSV))
+    records = []
+    for _ in reader:
+        record = next(reader)
+        postcode_data = get_postcode_data(record['postcode'])
+        if not postcode_data:
+            continue
+        record['latitude'] = round(postcode_data['latitude'], 6)
+        record['longitude'] = round(postcode_data['longitude'], 6)
+        records.append(record)
+    return records
 
 
 def create_dataframe_files(input_file, compare_file=None):
@@ -147,11 +165,12 @@ def create_dataframe_files(input_file, compare_file=None):
         dict_writer.writerows(failed_postcode_finds)
 
 
-def create_interactive_map(br_df, ep_df, bbox, highres, cutoff):
+def create_interactive_map(br_df, ep_df, fb_df, bbox, highres, cutoff):
     """
     Creates an interactive map on port 8888
     :param br_df: business rates data frame
     :param ep_df: empty properties data frame
+    :param fb_df: food bank data frame
     :param bbox: bounding box values
     :param highres: whether to create it in highres
     :param cutoff: the highest n values removed from dataset
@@ -169,6 +188,7 @@ def create_interactive_map(br_df, ep_df, bbox, highres, cutoff):
     sc = ax.scatter(br_df.longitude, br_df.latitude, c=br_df.rate, vmin=br_df.rate.min(), vmax=br_df.rate.max(), s=0.5,
                     cmap=cm, alpha=0.8)
     ep_sc = ax.scatter(ep_df.longitude, ep_df.latitude, c='y', s=0.2, marker='*')
+    fb_sc = ax.scatter(fb_df.longitude, fb_df.latitude, c='r', s=0.2, marker='+')
     plt.colorbar(sc)
     names_and_rates = [f"{n}: {r}" for n, r in zip(br_df['Primary Liable party name'], br_df.rate)]
     tooltip = mpld3.plugins.PointLabelTooltip(sc, labels=names_and_rates)
@@ -176,14 +196,19 @@ def create_interactive_map(br_df, ep_df, bbox, highres, cutoff):
     empty_tooltip = mpld3.plugins.PointLabelTooltip(ep_sc, labels=empty_list)
     mpld3.plugins.connect(fig, tooltip)
     mpld3.plugins.connect(fig, empty_tooltip)
+    labels = ["Commercial Properties", "Empty Commercial Properties", "Foodbank deliveries"]
+    scs = [sc, ep_sc, fb_sc]
+    interactive_legend = mpld3.plugins.InteractiveLegendPlugin(scs, labels, legend_offset=(0, 580))
+    mpld3.plugins.connect(fig, interactive_legend)
     mpld3.show()
 
 
-def create_poster(br_df, ep_df, bbox, cutoff):
+def create_poster(br_df, ep_df, fb_df, bbox, cutoff):
     """
     Creates a high res image of the map
     :param br_df: business rates data frame
     :param ep_df: empty properties data frame
+    :param fb_df: food bank data frame
     :param bbox: bounding box values
     :param cutoff: the highest n values removed from dataset
     """
@@ -197,6 +222,7 @@ def create_poster(br_df, ep_df, bbox, cutoff):
     sc = ax.scatter(br_df.longitude, br_df.latitude, c=br_df.rate, vmin=br_df.rate.min(), vmax=br_df.rate.max(), s=2,
                     cmap=cm, alpha=0.8)
     ax.scatter(ep_df.longitude, ep_df.latitude, c='y', s=0.2, marker='*')
+    ax.scatter(fb_df.longitude, fb_df.latitude, c='r', s=0.2, marker='+')
     plt.colorbar(sc)
     plt.savefig("poster.png")
 
@@ -240,6 +266,8 @@ def main():
         records = json.load(f)
         ep_df = DataFrame(records)
 
+    fb_df = DataFrame(get_food_bank_points())
+
     br_df = br_df.dropna()
     br_df.drop(index=br_df.rate.nlargest(n=args.cutoff).index, inplace=True)
     bbox = (br_df.longitude.min(), br_df.longitude.max(), br_df.latitude.min(), br_df.latitude.max())
@@ -252,9 +280,9 @@ def main():
         input(f"Please open openstreetmap, and export {MAP_PNG} here using url {map_url}")
 
     if args.poster:
-        create_poster(br_df, ep_df, bbox, args.cutoff)
+        create_poster(br_df, ep_df, fb_df, bbox, args.cutoff)
     if args.interactive:
-        create_interactive_map(br_df, ep_df, bbox, args.highres, args.cutoff)
+        create_interactive_map(br_df, ep_df, fb_df, bbox, args.highres, args.cutoff)
 
 
 if __name__ == '__main__':
