@@ -1,0 +1,13 @@
+COLOURMAP = "RdBu"
+MAP_PNG = "resources/map.png"
+EMPTY_PROPERTIES_DATA_FILE = "resources/empty-commercial-properties-january-2022.data"
+EMPTY_PROPERTIES_CSV = "resources/empty-commercial-properties-january-2022.csv"
+BUSINESS_RATES_DATA_FILE = "resources/ndr-properties-january-2022.data"
+BUSINESS_RATES_CSV = "resources/ndr-properties-january-2022.csv"
+FOODBANK_DELIVERIES_DATA_FILE = "resources/foodbank-deliveries.data"
+FOODBANK_DELIVERIES_CSV = "resources/foodbank-deliveries.data"
+CUTOFF = 300
+HIGH_RES = True
+PORTSMOUTH_DATA_URL = "https://data.portsmouth.gov.uk/media/tables"
+POSTCODE_API_URL = "https://api.postcodes.io/postcodes"
+MAP_EXPORT_URL = "https://render.openstreetmap.org/cgi-bin/export"
