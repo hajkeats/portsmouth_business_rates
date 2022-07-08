@@ -1,0 +1,55 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: create-interactive-map-
+  labels:
+    workflows.argoproj.io/archive-strategy: "false"
+    namespace: argo
+spec:
+  entrypoint: main
+  volumes:
+    - name: share
+      persistentVolumeClaim:
+        claimName: share-claim
+
+  templates:
+    - name: main
+      dag:
+        tasks:
+          - name: list
+            template: list-resource-files
+          - name: verify
+            template: verify-resource-files
+            arguments:
+              parameters:
+              - name: files
+                value: "{{tasks.list.outputs.result}}"
+            dependencies: [ "list" ]
+
+    - name: list-resource-files
+      container:
+        image: docker.io/library/python-image:latest
+        imagePullPolicy: Never
+        command: [sh, -c]
+        args: ["echo $(ls /mnt/share)"]
+        volumeMounts:
+          - name: share
+            mountPath: /mnt/share
+      nodeSelector:
+        kubernetes.io/hostname: minikube-m02
+
+    - name: verify-resource-files
+      inputs:
+        parameters:
+        - name: files
+      script:
+        image: docker.io/library/python-image:latest
+        imagePullPolicy: Never
+        command:
+          - python
+        source: |
+          assert "ndr-properties-january-2022.data" in "{{inputs.parameters.files}}"
+          assert "empty-commercial-properties-january-2022.data" in "{{inputs.parameters.files}}"
+          assert "foodbank-deliveries.data" in "{{inputs.parameters.files}}"
+      nodeSelector:
+        kubernetes.io/hostname: minikube-m02

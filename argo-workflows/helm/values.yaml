@@ -1,0 +1,20 @@
+singleNamespace: true
+fullnameOverride: argo
+
+controller:
+  workflowDefaults:
+   spec:
+     serviceAccountName: argo-workflow
+  nodeSelector:
+    kubernetes.io/hostname: minikube
+
+server:
+  extraArgs:
+  - --auth-mode=server
+  nodeSelector:
+    kubernetes.io/hostname: minikube
+
+workflow:
+  serviceAccount:
+    create: true
+    
